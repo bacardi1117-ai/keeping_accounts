@@ -1,6 +1,6 @@
 # 日日記帳｜個人支出日曆
 
-純 HTML、CSS、JavaScript 的個人支出網站。前端可放在 GitHub Pages；資料存於你自己的 Google Sheets，透過 Google Apps Script Web App 讀寫。只記支出，支援日曆、新增、編輯、刪除、每月及分類統計，版面適用手機。
+純 HTML、CSS、JavaScript 的個人支出網站。前端可放在 GitHub Pages；資料存於你自己的 Google Sheets，透過 Google Apps Script Web App 讀寫。只記支出，支援日曆、新增、編輯、刪除、每月分類與經手人統計，以及每日辦理事項，版面適用手機。
 
 ## 專案架構
 
@@ -12,6 +12,8 @@ keeping_accounts/
 ├─ apps-script/
 │  ├─ Code.gs              試算表初始化與 CRUD 函式
 │  └─ Bridge.html          GitHub Pages 與 Apps Script 的通訊頁
+├─ tests/
+│  └─ backend.test.cjs     試算表升級、經手人及事項流程測試
 └─ README.md
 ```
 
@@ -36,7 +38,16 @@ keeping_accounts/
 
 如果本機也要測試，可用逗號加入 `http://localhost:8000`，例如 `https://你的帳號.github.io,http://localhost:8000`。GitHub Pages 專案網址雖是 `https://你的帳號.github.io/keeping_accounts/`，來源仍只填 `https://你的帳號.github.io`。自訂網域則填實際網域。這個設定是允許前端呼叫的來源清單，**不是密碼或完整身分驗證**。
 
-在編輯器上方函式選單選 `setup`，按 **執行**。首次執行會要求授權存取試算表；完成後應新增 `Expenses` 和 `Categories` 兩個工作表，以及預設類別。之後再次執行 `setup` 不會清空既有資料。
+在編輯器上方函式選單選 `setup`，按 **執行**。首次執行會要求授權存取試算表；完成後應新增 `Expenses`、`Categories`、`People`、`DailyTasks` 四個工作表，以及預設類別和經手人。之後再次執行 `setup` 不會清空既有資料。
+
+### 已使用舊版網站的更新步驟
+
+1. 將本專案**新版** `apps-script/Code.gs` 與 `apps-script/Bridge.html` 全文重新貼入 Apps Script 對應檔案並儲存。
+2. 在 Apps Script 編輯器選 `setup`，再按 **執行**。它會在原有 `Expenses` 的 **I 欄**新增 `handler` 標題，並建立 `People`、`DailyTasks`；**原有支出資料不會刪除**。
+3. 到 **部署 → 管理部署 → 編輯**，選擇**新版本**重新部署。通常可以沿用原 `/exec` URL。
+4. 自行將更新的前端檔案推送到 GitHub，等待 Pages 更新，然後重新整理網站。
+
+舊支出因為原本沒有經手人，月結算會列在「未指定」。編輯舊支出時選擇經手人並儲存，即可歸入該人的統計。
 
 ## 2. 試算表欄位
 
@@ -54,6 +65,7 @@ keeping_accounts/
 | F | `note` | 該筆支出的備註，可留白 |
 | G | `createdAt` | 建立時間，UTC ISO 格式 |
 | H | `updatedAt` | 最近修改時間，UTC ISO 格式 |
+| I | `handler` | 經手人；舊資料可留空，會列在「未指定」 |
 
 ### `Categories`
 
@@ -66,6 +78,27 @@ keeping_accounts/
 
 預設含生活（全聯、農會、五金行、其他）、外食（早餐、午餐、晚餐）、醫療（居服費、計程車、其他）。**新增分類**：在 `Categories` 最下方加一列，填主項目、子項目、`TRUE`、排序數字，重新整理網站後即可選擇。相同主項目會自動合併成一組，也能新增全新的主項目。每筆支出都有獨立備註欄；分類本身不需要備註。停用類別後，既有支出仍保留於統計中。
 
+### `People`
+
+| 欄 | 名稱 | 用途 |
+| --- | --- | --- |
+| A | `name` | 經手人名稱，預設「淑花」、「我」 |
+| B | `enabled` | `TRUE` 啟用；`FALSE` 停用 |
+| C | `sortOrder` | 顯示順序 |
+
+**新增經手人**：在 `People` 最下方加一列，例如 `媽媽`、`TRUE`、`30`，重新整理網站後即可在支出表單選擇。請避免重複名稱。停用的人不再出現於新增選單，既有支出仍會列入該人的月結算。
+
+### `DailyTasks`
+
+| 欄 | 名稱 | 用途 |
+| --- | --- | --- |
+| A | `date` | 日期，文字格式 `YYYY-MM-DD`，每一天一列 |
+| B | `content` | 當日辦理事項，最多 1000 字 |
+| C | `createdAt` | 建立時間 |
+| D | `updatedAt` | 最近修改時間 |
+
+在日曆日期上**按滑鼠右鍵**可新增、查看、編輯辦理事項；手機和平板可**長按日期**，也可以先點日期，再按「辦理事項」。日曆只顯示欄位容得下的文字，完整內容在編輯視窗可看見。一天有一則事項；清空內容並儲存即可移除。點日期的普通操作仍是查看及新增支出。
+
 ## 3. 部署 Apps Script Web App
 
 1. Apps Script 右上角選 **部署 → 新增部署**。
@@ -77,13 +110,13 @@ keeping_accounts/
 
 ### 日後更新 Apps Script 程式時
 
-只有當你日後想修改記帳功能或修正程式時，才需編輯 Apps Script 裡的 `Code.gs` 或 `Bridge.html`。修改後到 **部署 → 管理部署 → 編輯**，選擇**新版本**並重新部署，既有 `/exec` 網址才會使用新程式。單純新增記帳資料、修改分類表或使用網站，都不需要做這一步。
+只有當你日後想修改記帳功能或修正程式時，才需編輯 Apps Script 裡的 `Code.gs` 或 `Bridge.html`。修改後到 **部署 → 管理部署 → 編輯**，選擇**新版本**並重新部署，既有 `/exec` 網址才會使用新程式。單純新增記帳資料、修改分類表或經手人名單、使用網站，都不需要做這一步。
 
-前端使用嵌入的 Apps Script HTML 頁面及 `google.script.run` 取得呼叫結果。`getMonth` 讀取所選月份與分類；`createExpense`、`updateExpense`、`deleteExpense` 對試算表執行新增、修改、刪除。這種做法避開一般跨網域 `fetch` 對 Apps Script 回應的 CORS 限制。
+前端使用嵌入的 Apps Script HTML 頁面及 `google.script.run` 取得呼叫結果。`getMonth` 讀取所選月份、分類、經手人與辦理事項；`createExpense`、`updateExpense`、`deleteExpense` 對支出執行新增、修改、刪除；`saveDailyTask` 儲存或清除當日事項。這種做法避開一般跨網域 `fetch` 對 Apps Script 回應的 CORS 限制。
 
 ## 4. 發佈 GitHub Pages
 
-依你的要求，本專案目前**沒有 commit、push，也沒有替你開啟 GitHub Pages**。要自行發佈：
+前端變更需要你自行 commit、push；本次修改不會替你操作 GitHub 或發佈。要自行發佈：
 
 1. 在 `keeping_accounts` repository 執行 commit 與 push 到 `main` 分支。
 2. 到 GitHub repository **Settings → Pages**，將 **Build and deployment → Source** 設為 **Deploy from a branch**，分支選 `main`、資料夾選 `/ (root)`，按 **Save**。
@@ -92,6 +125,8 @@ keeping_accounts/
 5. 點日曆日期 → **新增支出**，記一筆測試資料。確認月統計和 Google Sheet 的 `Expenses` 都出現該筆資料，再試一次編輯及刪除。
 
 若網站顯示「連線逾時」，先檢查 `/exec` URL、Web App 的存取權、`ALLOWED_ORIGINS` 是否與目前網址的來源完全相同，以及修改 Apps Script 後是否重新部署新版本。本機測試請用 HTTP 伺服器（例如 `python -m http.server 8000`）開啟 `http://localhost:8000`，不要直接雙擊 `index.html` 用 `file://` 開啟。
+
+程式邏輯的本機測試可執行 `node tests/backend.test.cjs`。這些測試使用模擬試算表，不會連接你的 Google 帳號；完成部署後仍須在實際網站測試連線與操作。
 
 ## 存取與隱私
 

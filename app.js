@@ -16,7 +16,7 @@ const today = new Date();
 const state = {
   month: new Date(today.getFullYear(), today.getMonth(), 1),
   selectedDate: dateKey(today.getFullYear(), today.getMonth(), today.getDate()),
-  expenses: [], categories: DEFAULT_CATEGORIES, connected: false, loading: false,
+  expenses: [], categories: DEFAULT_CATEGORIES, people: [], tasks: [], connected: false, loading: false,
   editId: null, activeMain: null, webAppUrl: localStorage.getItem(URL_KEY) || ""
 };
 let bridge = null;
@@ -96,6 +96,8 @@ async function startConnection(url) {
     disposeBridge();
     state.expenses = [];
     state.categories = DEFAULT_CATEGORIES;
+    state.people = [];
+    state.tasks = [];
     setConnection(false, "連線失敗");
     $("setupBanner").hidden = false;
     render();
@@ -111,9 +113,13 @@ function setConnection(connected, label) {
 }
 
 async function loadMonth() {
-  const result = await rpc("getMonth", { month: monthKey(state.month) });
+  const requestedMonth = monthKey(state.month);
+  const result = await rpc("getMonth", { month: requestedMonth });
+  if (requestedMonth !== monthKey(state.month)) return;
   state.expenses = Array.isArray(result.expenses) ? result.expenses : [];
   state.categories = Array.isArray(result.categories) ? result.categories : [];
+  state.people = Array.isArray(result.people) ? result.people : [];
+  state.tasks = Array.isArray(result.tasks) ? result.tasks : [];
   if (state.activeMain && !new Set(state.categories.map((item) => item.main)).has(state.activeMain)) state.activeMain = null;
   render();
 }
@@ -133,7 +139,25 @@ function render() {
   $("monthTotal").textContent = money(state.expenses.reduce((sum, item) => sum + Number(item.amount), 0));
   $("monthCount").textContent = `${state.expenses.length} 筆消費`;
   renderCategories();
+  renderPeople();
   renderCalendar();
+}
+
+function renderPeople() {
+  const container = $("personSummary");
+  container.replaceChildren();
+  const names = [...new Set([...state.people, ...state.expenses.map((item) => item.handler || "未指定")])];
+  if (!names.length) {
+    container.append(makeElement("p", "empty-state", "連線後顯示經手人結算。"));
+    return;
+  }
+  for (const name of names) {
+    const total = state.expenses.filter((item) => (item.handler || "未指定") === name)
+      .reduce((sum, item) => sum + Number(item.amount), 0);
+    const card = makeElement("div", "person-item");
+    card.append(makeElement("span", "", name), makeElement("strong", "", money(total)));
+    container.append(card);
+  }
 }
 
 function renderCategories() {
@@ -178,18 +202,39 @@ function renderCalendar() {
     const key = dateKey(date.getFullYear(), date.getMonth(), date.getDate());
     const inMonth = date.getMonth() === month;
     const entries = inMonth ? state.expenses.filter((item) => item.date === key) : [];
-    const button = makeElement("button", `day-cell${!inMonth ? " outside" : ""}${key === todayKey ? " today" : ""}`);
+    const task = inMonth ? state.tasks.find((item) => item.date === key) : null;
+    const button = makeElement("button", `day-cell${!inMonth ? " outside" : ""}${key === todayKey ? " today" : ""}${task ? " has-task" : ""}`);
     button.type = "button";
-    button.setAttribute("aria-label", `${date.getFullYear()} 年 ${date.getMonth() + 1} 月 ${date.getDate()} 日，${entries.length} 筆支出`);
+    button.setAttribute("aria-label", `${date.getFullYear()} 年 ${date.getMonth() + 1} 月 ${date.getDate()} 日，${entries.length} 筆支出${task ? "，有辦理事項" : ""}`);
     button.append(makeElement("span", "day-number", date.getDate()));
+    if (task) button.append(makeElement("span", "day-task", task.content));
     if (entries.length) {
       button.append(makeElement("span", "day-amount", money(entries.reduce((sum, item) => sum + Number(item.amount), 0)).replace("NT$ ", "$")));
       button.append(makeElement("span", "day-count", `${entries.length} 筆`));
     }
-    button.addEventListener("click", async () => {
+    const selectDate = async (showTask) => {
       state.selectedDate = key;
       if (!inMonth) { state.month = new Date(date.getFullYear(), date.getMonth(), 1); await changeMonth(); }
-      openDay();
+      if (showTask) openTask(); else openDay();
+    };
+    let longPressTimer;
+    let longPressFired = false;
+    button.addEventListener("contextmenu", (event) => {
+      event.preventDefault();
+      clearTimeout(longPressTimer);
+      if (!longPressFired) selectDate(true);
+    });
+    button.addEventListener("pointerdown", (event) => {
+      if (event.pointerType !== "touch" && event.pointerType !== "pen") return;
+      longPressFired = false;
+      longPressTimer = setTimeout(() => { longPressFired = true; selectDate(true); }, 550);
+    });
+    for (const eventName of ["pointerup", "pointercancel", "pointerleave"]) {
+      button.addEventListener(eventName, () => clearTimeout(longPressTimer));
+    }
+    button.addEventListener("click", (event) => {
+      if (longPressFired) { event.preventDefault(); longPressFired = false; return; }
+      selectDate(false);
     });
     container.append(button);
   }
@@ -197,6 +242,7 @@ function renderCalendar() {
 
 async function changeMonth() {
   state.expenses = [];
+  state.tasks = [];
   render();
   if (!state.connected) return;
   try { await loadMonth(); } catch (error) { toast(error.message); }
@@ -213,7 +259,7 @@ function openDay() {
   for (const item of entries) {
     const row = makeElement("div", "entry");
     const content = makeElement("div", "entry-content");
-    content.append(makeElement("div", "entry-title", `${item.main} · ${item.sub}`), makeElement("div", "entry-note", item.note || "無備註"));
+    content.append(makeElement("div", "entry-title", `${item.main} · ${item.sub}`), makeElement("div", "entry-note", `${item.handler || "未指定經手人"}${item.note ? ` · ${item.note}` : ""}`));
     const edit = makeElement("button", "entry-edit", "編輯");
     edit.type = "button";
     edit.addEventListener("click", () => openExpense(item));
@@ -221,7 +267,35 @@ function openDay() {
     container.append(row);
   }
   $("addExpenseButton").disabled = !state.connected;
+  $("openTaskButton").disabled = !state.connected;
   if (!$("dayDialog").open) $("dayDialog").showModal();
+}
+
+function openTask() {
+  if (!state.connected) { toast("請先連接試算表"); return; }
+  const [, month, day] = state.selectedDate.split("-").map(Number);
+  const task = state.tasks.find((item) => item.date === state.selectedDate);
+  $("taskDialogTitle").textContent = `${month} 月 ${day} 日`;
+  $("taskContent").value = task?.content || "";
+  $("taskError").hidden = true;
+  $("dayDialog").close();
+  $("taskDialog").showModal();
+  $("taskContent").focus();
+}
+
+async function saveTask(event) {
+  event.preventDefault();
+  const error = $("taskError");
+  error.hidden = true;
+  $("saveTaskButton").disabled = true;
+  try {
+    const content = $("taskContent").value.trim();
+    await rpc("saveDailyTask", { date: state.selectedDate, content });
+    $("taskDialog").close();
+    await loadMonth();
+    toast(content ? "辦理事項已儲存" : "辦理事項已移除");
+  } catch (cause) { error.textContent = cause.message; error.hidden = false; }
+  finally { $("saveTaskButton").disabled = false; }
 }
 
 function fillMainOptions(selected) {
@@ -243,6 +317,15 @@ function fillSubOptions(selected) {
   element.value = selected || subs[0] || "";
 }
 
+function fillPersonOptions(selected) {
+  const element = $("expenseHandler");
+  element.replaceChildren(new Option("請選擇經手人", ""));
+  const names = [...state.people];
+  if (selected && !names.includes(selected)) names.push(selected);
+  for (const name of names) element.add(new Option(name, name));
+  element.value = selected || "";
+}
+
 function openExpense(item = null) {
   if (!state.connected) { toast("請先連接試算表"); return; }
   state.editId = item?.id || null;
@@ -252,6 +335,7 @@ function openExpense(item = null) {
   $("expenseNote").value = item?.note || "";
   fillMainOptions(item?.main);
   fillSubOptions(item?.sub);
+  fillPersonOptions(item?.handler);
   $("deleteExpenseButton").hidden = !item;
   $("formError").hidden = true;
   $("dayDialog").close();
@@ -267,10 +351,10 @@ function setFormBusy(busy) {
 
 async function saveExpense(event) {
   event.preventDefault();
-  const payload = { date: $("expenseDate").value, amount: Number($("expenseAmount").value), main: $("expenseMain").value, sub: $("expenseSub").value, note: $("expenseNote").value.trim() };
+  const payload = { date: $("expenseDate").value, amount: Number($("expenseAmount").value), main: $("expenseMain").value, sub: $("expenseSub").value, handler: $("expenseHandler").value, note: $("expenseNote").value.trim() };
   const errorElement = $("formError");
-  if (!payload.date || !Number.isFinite(payload.amount) || payload.amount <= 0 || !payload.main || !payload.sub) {
-    errorElement.textContent = "請填寫日期、正確金額及分類。"; errorElement.hidden = false; return;
+  if (!payload.date || !Number.isFinite(payload.amount) || payload.amount <= 0 || !payload.main || !payload.sub || !payload.handler) {
+    errorElement.textContent = "請填寫日期、正確金額、分類及經手人。"; errorElement.hidden = false; return;
   }
   setFormBusy(true);
   try {
@@ -323,10 +407,12 @@ function init() {
   $("settingsButton").addEventListener("click", () => { $("webAppUrl").value = state.webAppUrl; $("settingsError").hidden = true; $("settingsDialog").showModal(); });
   $("setupBannerButton").addEventListener("click", () => $("settingsButton").click());
   $("saveSettingsButton").addEventListener("click", saveSettings);
-  $("disconnectButton").addEventListener("click", () => { disposeBridge(); localStorage.removeItem(URL_KEY); state.webAppUrl = ""; state.expenses = []; state.categories = DEFAULT_CATEGORIES; setConnection(false, "尚未連線"); $("setupBanner").hidden = false; $("settingsDialog").close(); render(); toast("已移除連線設定"); });
+  $("disconnectButton").addEventListener("click", () => { disposeBridge(); localStorage.removeItem(URL_KEY); state.webAppUrl = ""; state.expenses = []; state.categories = DEFAULT_CATEGORIES; state.people = []; state.tasks = []; setConnection(false, "尚未連線"); $("setupBanner").hidden = false; $("settingsDialog").close(); render(); toast("已移除連線設定"); });
   $("expenseMain").addEventListener("change", () => fillSubOptions());
   $("addExpenseButton").addEventListener("click", () => openExpense());
+  $("openTaskButton").addEventListener("click", openTask);
   $("expenseForm").addEventListener("submit", saveExpense);
+  $("taskForm").addEventListener("submit", saveTask);
   $("deleteExpenseButton").addEventListener("click", deleteExpense);
   document.querySelectorAll("[data-close]").forEach((button) => button.addEventListener("click", () => $(button.dataset.close).close()));
   for (const dialog of document.querySelectorAll("dialog")) dialog.addEventListener("click", (event) => { if (event.target === dialog) dialog.close(); });

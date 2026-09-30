@@ -7,7 +7,7 @@
   const CHANNEL = 'keeping-accounts-v1';
   const TOKEN = <?!= tokenJson ?>;
   const ALLOWED_ORIGINS = <?!= allowedOriginsJson ?>;
-  const ACTIONS = ['getMonth', 'createExpense', 'updateExpense', 'deleteExpense'];
+  const ACTIONS = ['getMonth', 'createExpense', 'updateExpense', 'deleteExpense', 'saveDailyTask'];
 
   function send(target, origin, message) {
     target.postMessage(Object.assign({ channel: CHANNEL, token: TOKEN }, message), origin);
