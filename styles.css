@@ -3,11 +3,21 @@
 
 .person-panel{background:white;border:1px solid #e8ece6;box-shadow:0 7px 30px #1d362308;border-radius:18px;padding:21px 24px;margin-bottom:20px}
 .person-summary{display:grid;grid-template-columns:repeat(auto-fit,minmax(145px,1fr));gap:12px;margin-top:15px}
-.person-item{background:#f7f9f6;border:1px solid #edf0ea;border-radius:12px;padding:13px 15px}
+.person-item{background:#f7f9f6;border:1px solid #edf0ea;border-radius:12px;padding:13px 15px;text-align:left;color:#26362c;min-width:0}
+.person-item:hover,.person-item.active{border-color:#8ab995;background:#eff7ee}
 .person-item span{display:block;color:#637569;font-size:12px;font-weight:700}
 .person-item strong{display:block;margin-top:7px;font-size:19px;color:#2d6141}
+.person-breakdown{grid-column:1/-1;border-top:1px solid #e9eee7;padding-top:14px}
+.person-breakdown h3{margin:0 0 13px;font-size:14px;color:#344c3a}
+.person-main-group{margin-bottom:12px}
+.person-main-group:last-child{margin-bottom:0}
+.person-main-group h4{margin:0 0 5px;color:#6b9276;font-size:12px}
+.person-sub-row{display:flex;justify-content:space-between;gap:12px;padding:5px 2px;color:#5d7063;font-size:12px}
+.person-sub-row strong{color:#2d6141;white-space:nowrap}
+.person-empty{margin:0;color:#8a9b8c;font-size:12px}
 .day-task{display:block;width:100%;min-width:0;max-height:2.4em;overflow:hidden;color:#5c715e;font-size:10px;line-height:1.2;overflow-wrap:anywhere;margin-top:3px}
 .day-cell.has-task{background:#f7faf1}
 .day-actions{display:flex;gap:10px}
 .day-actions button{flex:1}
+.field-help{margin:-9px 0 0;color:#a45f28;font-size:12px;line-height:1.6}
 @media(max-width:750px){.person-panel{padding:19px}.person-summary{grid-template-columns:repeat(2,minmax(0,1fr))}.day-task{font-size:9px;max-height:2.2em}.day-cell.has-task{min-height:79px}}
