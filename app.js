@@ -17,7 +17,7 @@ const state = {
   month: new Date(today.getFullYear(), today.getMonth(), 1),
   selectedDate: dateKey(today.getFullYear(), today.getMonth(), today.getDate()),
   expenses: [], categories: DEFAULT_CATEGORIES, people: [], tasks: [], connected: false, loading: false,
-  editId: null, activeMain: null, webAppUrl: localStorage.getItem(URL_KEY) || ""
+  editId: null, activeMain: null, activePerson: null, webAppUrl: localStorage.getItem(URL_KEY) || ""
 };
 let bridge = null;
 let toastTimer;
@@ -87,11 +87,17 @@ function rpc(action, payload = {}) {
 
 async function startConnection(url) {
   setConnection(false, "連線中…");
+  $("setupBannerText").textContent = "正在連接 Google 試算表…";
   try {
     await connectBridge(url);
     await loadMonth();
     setConnection(true, "已連線");
-    $("setupBanner").hidden = true;
+    if (state.people.length === 0) {
+      $("setupBannerText").textContent = "已連線，但 People 工作表沒有可用經手人。請檢查 A 欄姓名、B 欄啟用狀態，並確認 SPREADSHEET_ID 指向正確試算表。";
+      $("setupBanner").hidden = false;
+    } else {
+      $("setupBanner").hidden = true;
+    }
   } catch (error) {
     disposeBridge();
     state.expenses = [];
@@ -99,6 +105,7 @@ async function startConnection(url) {
     state.people = [];
     state.tasks = [];
     setConnection(false, "連線失敗");
+    $("setupBannerText").textContent = `連線失敗：${error.message}`;
     $("setupBanner").hidden = false;
     render();
     throw error;
@@ -115,6 +122,9 @@ function setConnection(connected, label) {
 async function loadMonth() {
   const requestedMonth = monthKey(state.month);
   const result = await rpc("getMonth", { month: requestedMonth });
+  if (!result || !Array.isArray(result.people) || !Array.isArray(result.tasks)) {
+    throw new Error("Apps Script 部署仍是舊版。請貼上新版 Code.gs 與 Bridge.html、執行 setup()，再到「管理部署」選新版本重新部署。");
+  }
   if (requestedMonth !== monthKey(state.month)) return;
   state.expenses = Array.isArray(result.expenses) ? result.expenses : [];
   state.categories = Array.isArray(result.categories) ? result.categories : [];
@@ -147,6 +157,7 @@ function renderPeople() {
   const container = $("personSummary");
   container.replaceChildren();
   const names = [...new Set([...state.people, ...state.expenses.map((item) => item.handler || "未指定")])];
+  if (state.activePerson && !names.includes(state.activePerson)) state.activePerson = null;
   if (!names.length) {
     container.append(makeElement("p", "empty-state", "連線後顯示經手人結算。"));
     return;
@@ -154,10 +165,48 @@ function renderPeople() {
   for (const name of names) {
     const total = state.expenses.filter((item) => (item.handler || "未指定") === name)
       .reduce((sum, item) => sum + Number(item.amount), 0);
-    const card = makeElement("div", "person-item");
-    card.append(makeElement("span", "", name), makeElement("strong", "", money(total)));
+    const expanded = state.activePerson === name;
+    const card = makeElement("button", `person-item${expanded ? " active" : ""}`);
+    card.type = "button";
+    card.setAttribute("aria-expanded", String(expanded));
+    if (expanded) card.setAttribute("aria-controls", "personBreakdown");
+    card.append(makeElement("span", "person-name", name), makeElement("strong", "", money(total)));
+    card.addEventListener("click", () => {
+      state.activePerson = expanded ? null : name;
+      renderPeople();
+    });
     container.append(card);
   }
+  if (state.activePerson) renderPersonBreakdown(container, state.activePerson);
+}
+
+function renderPersonBreakdown(container, name) {
+  const detail = makeElement("div", "person-breakdown");
+  detail.id = "personBreakdown";
+  detail.append(makeElement("h3", "", `${name}的子項目支出`));
+  const entries = state.expenses.filter((item) => (item.handler || "未指定") === name);
+  if (!entries.length) {
+    detail.append(makeElement("p", "person-empty", "本月沒有支出。"));
+    container.append(detail);
+    return;
+  }
+  const groups = new Map();
+  for (const item of entries) {
+    if (!groups.has(item.main)) groups.set(item.main, new Map());
+    const subs = groups.get(item.main);
+    subs.set(item.sub, (subs.get(item.sub) || 0) + Number(item.amount));
+  }
+  for (const [main, subs] of groups) {
+    const group = makeElement("div", "person-main-group");
+    group.append(makeElement("h4", "", main));
+    for (const [sub, total] of subs) {
+      const row = makeElement("div", "person-sub-row");
+      row.append(makeElement("span", "", sub), makeElement("strong", "", money(total)));
+      group.append(row);
+    }
+    detail.append(group);
+  }
+  container.append(detail);
 }
 
 function renderCategories() {
@@ -267,7 +316,6 @@ function openDay() {
     container.append(row);
   }
   $("addExpenseButton").disabled = !state.connected;
-  $("openTaskButton").disabled = !state.connected;
   if (!$("dayDialog").open) $("dayDialog").showModal();
 }
 
@@ -278,9 +326,19 @@ function openTask() {
   $("taskDialogTitle").textContent = `${month} 月 ${day} 日`;
   $("taskContent").value = task?.content || "";
   $("taskError").hidden = true;
-  $("dayDialog").close();
-  $("taskDialog").showModal();
-  $("taskContent").focus();
+  showDialogAfterDay("taskDialog", "taskContent");
+}
+
+function showDialogAfterDay(dialogId, focusId) {
+  if ($("dayDialog").open) $("dayDialog").close();
+  requestAnimationFrame(() => {
+    try {
+      if (!$(dialogId).open) $(dialogId).showModal();
+      $(focusId).focus();
+    } catch (error) {
+      toast(`無法開啟視窗：${error.message}`);
+    }
+  });
 }
 
 async function saveTask(event) {
@@ -288,14 +346,16 @@ async function saveTask(event) {
   const error = $("taskError");
   error.hidden = true;
   $("saveTaskButton").disabled = true;
+  $("saveTaskButton").textContent = "儲存中…";
   try {
     const content = $("taskContent").value.trim();
     await rpc("saveDailyTask", { date: state.selectedDate, content });
     $("taskDialog").close();
-    await loadMonth();
+    try { await loadMonth(); }
+    catch (cause) { toast(`事項已儲存，但重新讀取失敗：${cause.message}`); return; }
     toast(content ? "辦理事項已儲存" : "辦理事項已移除");
   } catch (cause) { error.textContent = cause.message; error.hidden = false; }
-  finally { $("saveTaskButton").disabled = false; }
+  finally { $("saveTaskButton").disabled = false; $("saveTaskButton").textContent = "儲存事項"; }
 }
 
 function fillMainOptions(selected) {
@@ -319,7 +379,8 @@ function fillSubOptions(selected) {
 
 function fillPersonOptions(selected) {
   const element = $("expenseHandler");
-  element.replaceChildren(new Option("請選擇經手人", ""));
+  element.replaceChildren(new Option(state.people.length ? "請選擇經手人" : "沒有可用的經手人", ""));
+  $("peopleHelp").hidden = state.people.length > 0;
   const names = [...state.people];
   if (selected && !names.includes(selected)) names.push(selected);
   for (const name of names) element.add(new Option(name, name));
@@ -338,9 +399,7 @@ function openExpense(item = null) {
   fillPersonOptions(item?.handler);
   $("deleteExpenseButton").hidden = !item;
   $("formError").hidden = true;
-  $("dayDialog").close();
-  $("expenseDialog").showModal();
-  $("expenseAmount").focus();
+  showDialogAfterDay("expenseDialog", "expenseAmount");
 }
 
 function setFormBusy(busy) {
@@ -407,7 +466,7 @@ function init() {
   $("settingsButton").addEventListener("click", () => { $("webAppUrl").value = state.webAppUrl; $("settingsError").hidden = true; $("settingsDialog").showModal(); });
   $("setupBannerButton").addEventListener("click", () => $("settingsButton").click());
   $("saveSettingsButton").addEventListener("click", saveSettings);
-  $("disconnectButton").addEventListener("click", () => { disposeBridge(); localStorage.removeItem(URL_KEY); state.webAppUrl = ""; state.expenses = []; state.categories = DEFAULT_CATEGORIES; state.people = []; state.tasks = []; setConnection(false, "尚未連線"); $("setupBanner").hidden = false; $("settingsDialog").close(); render(); toast("已移除連線設定"); });
+  $("disconnectButton").addEventListener("click", () => { disposeBridge(); localStorage.removeItem(URL_KEY); state.webAppUrl = ""; state.expenses = []; state.categories = DEFAULT_CATEGORIES; state.people = []; state.tasks = []; setConnection(false, "尚未連線"); $("setupBannerText").textContent = "先連接你的 Google 試算表，開始記帳。"; $("setupBanner").hidden = false; $("settingsDialog").close(); render(); toast("已移除連線設定"); });
   $("expenseMain").addEventListener("change", () => fillSubOptions());
   $("addExpenseButton").addEventListener("click", () => openExpense());
   $("openTaskButton").addEventListener("click", openTask);
