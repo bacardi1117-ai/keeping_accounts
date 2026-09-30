@@ -1,0 +1,38 @@
+<!doctype html>
+<html lang="zh-Hant">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#f6f7f3">
+  <title>日日記帳｜個人支出日曆</title>
+  <link rel="stylesheet" href="styles.css">
+  <script src="app.js" defer></script>
+</head>
+<body>
+  <div class="app-shell">
+    <header class="topbar">
+      <a class="brand" href="#" aria-label="日日記帳首頁"><span class="brand-mark">日</span><span>日日記帳<small>把日常花費看清楚</small></span></a>
+      <div class="top-actions"><span id="connectionStatus" class="connection-status">尚未連線</span><button id="settingsButton" class="icon-button" type="button" aria-label="連線設定" title="連線設定">⚙</button></div>
+    </header>
+
+    <main>
+      <section class="page-heading"><div><p class="eyebrow">我的支出日曆</p><h1 id="monthHeading"></h1><p class="heading-subtitle">點選日期，記下每一筆日常花費。</p></div><button id="todayButton" class="quiet-button" type="button">回到今天</button></section>
+
+      <div id="setupBanner" class="setup-banner" hidden><span>先連接你的 Google 試算表，開始記帳。</span><button id="setupBannerButton" type="button">設定連線 →</button></div>
+
+      <section class="overview" aria-label="每月統計"><div class="total-card"><div class="total-card-top"><span>本月總支出</span><span id="monthCount">0 筆消費</span></div><strong id="monthTotal">NT$ 0</strong><span class="total-card-foot">讓每筆支出都有跡可循</span></div><div class="category-panel"><div class="section-title-row"><h2>分類支出</h2><span>點選查看子項目</span></div><div id="categorySummary" class="category-summary"></div></div></section>
+
+      <section class="calendar-card" aria-label="月曆"><div class="calendar-toolbar"><div class="calendar-nav"><button id="prevMonth" class="icon-button" type="button" aria-label="上個月">‹</button><h2 id="calendarTitle"></h2><button id="nextMonth" class="icon-button" type="button" aria-label="下個月">›</button></div><span class="calendar-hint">選一天，查看或新增支出</span></div><div class="weekday-grid" aria-hidden="true"><span>日</span><span>一</span><span>二</span><span>三</span><span>四</span><span>五</span><span>六</span></div><div id="calendarGrid" class="calendar-grid"></div></section>
+    </main>
+  </div>
+
+  <dialog id="dayDialog" class="app-dialog day-dialog"><div class="dialog-header"><div><p class="eyebrow">每日支出</p><h2 id="dayDialogTitle"></h2></div><button class="close-button" type="button" data-close="dayDialog" aria-label="關閉">×</button></div><div class="day-dialog-body"><div class="day-total"><span>當日支出</span><strong id="dayTotal">NT$ 0</strong></div><div id="dayEntries" class="day-entries"></div><button id="addExpenseButton" class="primary-button full-width" type="button">＋ 新增支出</button></div></dialog>
+
+  <dialog id="expenseDialog" class="app-dialog form-dialog"><form id="expenseForm" novalidate><div class="dialog-header"><div><p class="eyebrow">記錄一筆花費</p><h2 id="expenseDialogTitle">新增支出</h2></div><button class="close-button" type="button" data-close="expenseDialog" aria-label="關閉">×</button></div><div class="form-fields"><label>日期<input id="expenseDate" name="date" type="date" required></label><label>金額 <span class="field-hint">新臺幣</span><input id="expenseAmount" name="amount" type="number" min="0.01" max="999999999" step="0.01" inputmode="decimal" placeholder="0" required></label><div class="field-row"><label>主項目<select id="expenseMain" name="main" required></select></label><label>子項目<select id="expenseSub" name="sub" required></select></label></div><label>備註 <span class="field-hint">選填</span><textarea id="expenseNote" name="note" maxlength="500" rows="3" placeholder="例如：購買了什麼、和誰一起…"></textarea></label><p id="formError" class="form-error" role="alert" hidden></p></div><div class="form-actions"><button id="deleteExpenseButton" class="danger-button" type="button" hidden>刪除</button><span class="spacer"></span><button class="quiet-button" type="button" data-close="expenseDialog">取消</button><button id="saveExpenseButton" class="primary-button" type="submit">儲存支出</button></div></form></dialog>
+
+  <dialog id="settingsDialog" class="app-dialog settings-dialog"><div class="dialog-header"><div><p class="eyebrow">資料連線</p><h2>連接 Google 試算表</h2></div><button class="close-button" type="button" data-close="settingsDialog" aria-label="關閉">×</button></div><div class="settings-content"><p>貼上 Apps Script 部署後取得的 Web App 網址。網址只會儲存在這台裝置的瀏覽器中。</p><label>Web App URL<input id="webAppUrl" type="url" spellcheck="false" placeholder="https://script.google.com/macros/s/…/exec"></label><p class="settings-tip">首次使用請先依照 <a href="README.md" target="_blank" rel="noopener">README 部署說明</a> 設定試算表和允許的網站來源。</p><p id="settingsError" class="form-error" role="alert" hidden></p><div class="form-actions"><button id="disconnectButton" class="danger-button" type="button">移除連線</button><span class="spacer"></span><button id="saveSettingsButton" class="primary-button" type="button">儲存並連線</button></div></div></dialog>
+
+  <div id="toast" class="toast" role="status" aria-live="polite" hidden></div>
+  <div id="bridgeHost" aria-hidden="true"></div>
+</body>
+</html>

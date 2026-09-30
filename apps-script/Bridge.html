@@ -1,0 +1,29 @@
+<!doctype html>
+<html>
+<head><base target="_top"><meta charset="utf-8"></head>
+<body>
+<script>
+  'use strict';
+  const CHANNEL = 'keeping-accounts-v1';
+  const TOKEN = <?!= tokenJson ?>;
+  const ALLOWED_ORIGINS = <?!= allowedOriginsJson ?>;
+  const ACTIONS = ['getMonth', 'createExpense', 'updateExpense', 'deleteExpense'];
+
+  function send(target, origin, message) {
+    target.postMessage(Object.assign({ channel: CHANNEL, token: TOKEN }, message), origin);
+  }
+
+  window.addEventListener('message', function (event) {
+    if (event.source !== window.top || ALLOWED_ORIGINS.indexOf(event.origin) === -1) return;
+    const data = event.data;
+    if (!data || data.channel !== CHANNEL || data.token !== TOKEN || data.type !== 'request') return;
+    if (!ACTIONS.includes(data.action) || typeof data.id !== 'string') return;
+    google.script.run
+      .withSuccessHandler(function (result) { send(event.source, event.origin, { type: 'response', id: data.id, ok: true, result: result }); })
+      .withFailureHandler(function (error) { send(event.source, event.origin, { type: 'response', id: data.id, ok: false, error: error.message || '操作失敗' }); })[data.action](data.payload || {});
+  });
+
+  send(window.top, '*', { type: 'ready' });
+</script>
+</body>
+</html>
